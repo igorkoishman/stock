@@ -4,9 +4,7 @@ import glob
 from urllib.parse import urlparse
 import pandas as pd
 import psycopg2
-from flask import Flask, request, render_template_string, jsonify
-
-from app.ui import TEMPLATE
+from flask import Flask, request, render_template, jsonify
 
 # --- CONFIG ---
 PG_HOST = os.environ.get('POSTGRES_HOST', 'localhost')
@@ -26,6 +24,7 @@ def get_db_connection():
         password=PG_PASS,
         port=PG_PORT
     )
+
 def extract_file_base_name(filename_or_url):
     if filename_or_url.startswith('http'):
         parsed = urlparse(filename_or_url)
@@ -90,8 +89,8 @@ def index():
                                 where_clause = f"WHERE {col} = %s"
                                 params = [intval]
                             except ValueError:
-                                where_clause = "WHERE 1=0"  # invalid number: no results
-                        else:  # Numeric columns with float tolerance
+                                where_clause = "WHERE 1=0"
+                        else:
                             try:
                                 floatval = float(val)
                                 where_clause = f"WHERE ABS({col} - %s) < 1e-6"
@@ -106,14 +105,12 @@ def index():
         df = pd.read_sql_query(query, conn, params=params)
 
     table_html = df.to_html(classes="table table-striped table-bordered align-middle", index=False, border=0, justify="center")
-    return render_template_string(TEMPLATE, table_html=table_html, search=search)
+    return render_template("index.html", table_html=table_html, search=search)
 
 @app.route('/upload', methods=['POST'])
 def upload():
-    # Handle multi-file drag-and-drop
     files = request.files.getlist('file')
     if files and files[0].filename != '':
-        # Check ALL files are .csv (case-insensitive)
         not_csv = [f.filename for f in files if not f.filename.lower().endswith('.csv')]
         if not_csv:
             return jsonify({'error': f"All files must be CSV! These files are not: {', '.join(not_csv)}"}), 400
@@ -128,11 +125,10 @@ def upload():
             except Exception as e:
                 results.append({'file': file_name, 'error': str(e), 'status': 'fail'})
         return jsonify({'results': results})
-    # Handle directory import (local path)
+
     folder_path = request.form.get('folder_path')
     if folder_path:
         results = []
-        # Only read .csv files, ignore all others
         all_files = glob.glob(os.path.join(folder_path, '*'))
         csv_files = [f for f in all_files if f.lower().endswith('.csv')]
         if not csv_files:
@@ -149,9 +145,6 @@ def upload():
                 results.append({'file': file_name, 'error': str(e), 'status': 'fail'})
         return jsonify({'results': results})
     return jsonify({'error': 'No files or folder path provided.'}), 400
-
-# --- UI Template: same as before, not repeated here for brevity ---
-# (Insert your TEMPLATE variable from the previous assistant message here!)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

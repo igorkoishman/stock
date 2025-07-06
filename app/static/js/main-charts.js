@@ -4,19 +4,35 @@ document.addEventListener("DOMContentLoaded", () => {
   form.addEventListener("submit", async function (e) {
     e.preventDefault();
 
-    const stock = document.getElementById("stock").value;
-    const type = document.getElementById("type").value;
+    const stockSelect = document.getElementById("stock");
+    const selectedStocks = Array.from(stockSelect.selectedOptions).map(opt => opt.value);
+    const startDate = document.getElementById("start_date").value;
+    const endDate = document.getElementById("end_date").value;
+    const type = document.getElementById("type").value; // ✅ FIXED: grab actual value
+
+    if (!selectedStocks.length || !startDate || !endDate || !type) {
+      alert("Please select stock(s), chart type, and date range.");
+      return;
+    }
+
     const chartContainer = document.getElementById("chart");
 
-    // Reset the chart container and show loading state
+    // Reset chart with loading state
     chartContainer.innerHTML = `
       <div id="plotly-chart" style="height: 500px; width: 100%;">
         <div class="text-muted text-center pt-3">⏳ Loading...</div>
       </div>
     `;
 
+    const query = new URLSearchParams({
+      stock: selectedStocks.join(","),
+      start: startDate,
+      end: endDate,
+      type: type
+    });
+
     try {
-      const res = await fetch(`/chart-data?stock=${encodeURIComponent(stock)}&type=${type}`);
+      const res = await fetch(`/chart-data?${query.toString()}`);
       const json = await res.json();
 
       if (!res.ok) {
@@ -25,30 +41,19 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      // Confirm container is clean and targetable
       const plotDiv = document.getElementById("plotly-chart");
-
-      // ✅ Clear any loading message
       plotDiv.innerHTML = "";
-
-      // ✅ Optional: ensure no lingering old plot
       Plotly.purge(plotDiv);
 
-      // ✅ Render the new chart
       Plotly.newPlot(plotDiv, json.data, {
         ...json.layout,
         autosize: true,
         margin: { t: 50 },
-        // xaxis: {
-        //   title: "Date",
-        //   type: "date",
-        //   rangeslider: type === "candlestick" ? { visible: true } : undefined
-        // },
         xaxis: {
-  title: "Date",
-  type: "category",  // ← change "date" to "category" for string-based x-axis
-  rangeslider: type === "candlestick" ? { visible: true } : undefined
-},
+          title: "Date",
+          type: "category",
+          rangeslider: type === "candlestick" ? { visible: true } : undefined
+        },
         yaxis: {
           title: "Price"
         }

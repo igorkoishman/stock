@@ -24,12 +24,21 @@ document.addEventListener("DOMContentLoaded", () => {
       </div>
     `;
 
-    const query = new URLSearchParams({
-      stock: selectedStocks.join(","),
-      start: startDate,
-      end: endDate,
-      type: type
-    });
+const avgDays = document.getElementById("avg_days").value;
+const includeCurrent = document.getElementById("include_current").checked;
+
+const query = new URLSearchParams({
+  stock: selectedStocks.join(","),
+  start: startDate,
+  end: endDate,
+  type: type
+});
+
+// Only send avg/include if avgDays is provided
+if (avgDays) {
+  query.set("avg", avgDays);
+  query.set("include", includeCurrent ? "1" : "0");
+}
 
     try {
       const res = await fetch(`/chart-data?${query.toString()}`);

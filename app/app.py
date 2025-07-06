@@ -167,13 +167,17 @@ def chart_data():
     start = request.args.get("start")
     end = request.args.get("end")
     chart_type = request.args.get("type")
+    avg_days = request.args.get("avg")
+    include_current = request.args.get("include") == "1"
 
     if not stocks or not start or not end or not chart_type:
         return jsonify({"error": "Missing required parameters."}), 400
 
-    print(f"📊 Chart requested: stock={stocks}, type={chart_type}, range={start} to {end}")
+    if include_current and not avg_days:
+        return jsonify({"error": "Include current requires average_days_back."}), 400
 
-    # Fetch and prepare data for all stocks
+    print(f"📊 Chart request: stocks={stocks}, type={chart_type}, avg={avg_days}, include={include_current}")
+
     df = pd.read_sql_query(
         """
         SELECT date, close_last, open, high, low, file_name
@@ -187,7 +191,7 @@ def chart_data():
     )
 
     if df.empty:
-        return jsonify({"error": "No data found in the selected range."}), 404
+        return jsonify({"error": "No data found in range."}), 404
 
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
     for col in ["open", "high", "low", "close_last"]:
@@ -195,37 +199,54 @@ def chart_data():
 
     df = df.dropna(subset=["date", "open", "high", "low", "close_last"])
     df = df.sort_values(["file_name", "date"])
-
-    if df.empty:
-        return jsonify({"error": "No valid data after cleaning."}), 400
+    df["date_str"] = df["date"].dt.strftime("%Y-%m-%d")
 
     fig = go.Figure()
 
     for stock in stocks:
-        stock_df = df[df["file_name"] == stock]
-        if stock_df.empty:
+        s_df = df[df["file_name"] == stock].copy()
+        if s_df.empty:
             continue
 
-        stock_df["date_str"] = stock_df["date"].dt.strftime("%Y-%m-%d")
-
+        # Main chart line
         if chart_type == "line":
             fig.add_trace(go.Scatter(
-                x=stock_df["date_str"],
-                y=stock_df["close_last"],
+                x=s_df["date_str"],
+                y=s_df["close_last"],
                 mode="lines",
                 name=stock
             ))
         elif chart_type == "candlestick":
             fig.add_trace(go.Candlestick(
-                x=stock_df["date_str"],
-                open=stock_df["open"],
-                high=stock_df["high"],
-                low=stock_df["low"],
-                close=stock_df["close_last"],
+                x=s_df["date_str"],
+                open=s_df["open"],
+                high=s_df["high"],
+                low=s_df["low"],
+                close=s_df["close_last"],
                 name=stock
             ))
         else:
             return jsonify({"error": f"Unknown chart type: {chart_type}"}), 400
+
+        # Optional overlay: average line
+        if avg_days:
+            try:
+                window = int(avg_days)
+
+                if include_current:
+                    s_df["avg"] = s_df["close_last"].rolling(window=window).mean()
+                else:
+                    s_df["avg"] = s_df["close_last"].shift(1).rolling(window=window).mean()
+
+                fig.add_trace(go.Scatter(
+                    x=s_df["date_str"],
+                    y=s_df["avg"],
+                    mode="lines",
+                    name=f"{stock} Avg {window}d",
+                    line=dict(dash="dot")
+                ))
+            except Exception as e:
+                print(f"⚠️ Failed to calculate average for {stock}: {e}")
 
     fig.update_layout(
         title=f"{chart_type.capitalize()} Chart for {', '.join(stocks)}",
@@ -241,10 +262,9 @@ def chart_data():
     def convert_ndarrays(obj):
         if isinstance(obj, np.ndarray):
             return obj.tolist()
-        raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+        raise TypeError(f"{type(obj).__name__} is not JSON serializable")
 
     return Response(json.dumps(fig.to_dict(), default=convert_ndarrays), mimetype="application/json")
-
 
 
 

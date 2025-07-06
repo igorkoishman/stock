@@ -8,8 +8,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const type = document.getElementById("type").value;
     const chartContainer = document.getElementById("chart");
 
-    // Always reset container
-    chartContainer.innerHTML = '<div id="plotly-chart" style="height: 500px;">⏳ Loading...</div>';
+    // Reset the chart container and show loading state
+    chartContainer.innerHTML = `
+      <div id="plotly-chart" style="height: 500px; width: 100%;">
+        <div class="text-muted text-center pt-3">⏳ Loading...</div>
+      </div>
+    `;
 
     try {
       const res = await fetch(`/chart-data?stock=${encodeURIComponent(stock)}&type=${type}`);
@@ -21,19 +25,33 @@ document.addEventListener("DOMContentLoaded", () => {
         return;
       }
 
-      // Log the actual data you're plotting
-      console.log("🔍 Plotly chart data:", json.data);
+      // Confirm container is clean and targetable
+      const plotDiv = document.getElementById("plotly-chart");
 
-      // Remove any previous plot
-      Plotly.purge("plotly-chart");
+      // ✅ Clear any loading message
+      plotDiv.innerHTML = "";
 
-      // Now safely render new chart
-      Plotly.newPlot("plotly-chart", json.data, {
+      // ✅ Optional: ensure no lingering old plot
+      Plotly.purge(plotDiv);
+
+      // ✅ Render the new chart
+      Plotly.newPlot(plotDiv, json.data, {
         ...json.layout,
         autosize: true,
         margin: { t: 50 },
-        xaxis: { title: "Date" },
-        yaxis: { title: "Price" }
+        // xaxis: {
+        //   title: "Date",
+        //   type: "date",
+        //   rangeslider: type === "candlestick" ? { visible: true } : undefined
+        // },
+        xaxis: {
+  title: "Date",
+  type: "category",  // ← change "date" to "category" for string-based x-axis
+  rangeslider: type === "candlestick" ? { visible: true } : undefined
+},
+        yaxis: {
+          title: "Price"
+        }
       });
 
     } catch (err) {

@@ -160,91 +160,163 @@ def charts():
         stock_names = pd.read_sql_query("SELECT DISTINCT file_name FROM stock_prices ORDER BY file_name;", conn)
     return render_template("charts.html", stock_names=stock_names['file_name'].tolist())
 
+# @app.route('/chart-data')
+# def chart_data():
+#     stock = request.args.get("stock")
+#     chart_type = request.args.get("type")
+#
+#     print(f"Requested chart for stock: {stock}, type: {chart_type}")
+#
+#     if not stock or not chart_type:
+#         return jsonify({"error": "Missing parameters"}), 400
+#
+#     df = pd.read_sql_query(
+#         "SELECT date, close_last, open, high, low FROM stock_prices WHERE file_name = %s ORDER BY date ASC",
+#         con=engine,
+#         params=(stock,)
+#     )
+#
+#     print("✅ Raw data from DB:")
+#     print(df.head(10))
+#     print("Shape:", df.shape)
+#     print("Dtypes:", df.dtypes)
+#
+#     if df.empty:
+#         return jsonify({"error": "No data found for that stock."}), 404
+#
+#     # Convert & clean
+#     df["date"] = pd.to_datetime(df["date"], errors="coerce")
+#     print("✅ After to_datetime:")
+#     print(df.dtypes)
+#     for col in ["open", "high", "low", "close_last"]:
+#         df[col] = pd.to_numeric(df[col], errors="coerce")
+#
+#     df = df.dropna(subset=["date", "open", "high", "low", "close_last"])
+#     df = df.sort_values("date")
+#
+#     print("✅ After cleaning:")
+#     print(df.tail(5))
+#     print("Range (close):", df["close_last"].min(), "→", df["close_last"].max())
+#
+#     if df.empty:
+#         return jsonify({"error": "No valid data after cleaning."}), 400
+#
+#     # Plotting
+#     if chart_type == "line":
+#         df["date_str"] = df["date"].dt.strftime("%Y-%m-%d")
+#         fig = go.Figure()
+#         fig.add_trace(go.Scatter(
+#             x=df["date_str"],
+#             y=df["close_last"],  # ← ✅ make sure this is here
+#             mode="lines",
+#             name="Close Price"
+#         ))
+#     elif chart_type == "candlestick":
+#         # 🔧 Ensure native Python datetime objects
+#         df["date"] = pd.to_datetime(df["date"], errors="coerce").dt.tz_localize(None)
+#         df["date"] = df["date"].apply(lambda x: x.to_pydatetime())
+#
+#         print("✅ Candlestick preview:")
+#         print(df[["date", "open", "high", "low", "close_last"]].tail())
+#
+#         fig = go.Figure(data=[go.Candlestick(
+#             x=df["date"],
+#             open=df["open"],
+#             high=df["high"],
+#             low=df["low"],
+#             close=df["close_last"],
+#             name=stock
+#         )])
+#     elif chart_type == "candlestick":
+#         print("🔁 Plotting candlestick with OHLC:")
+#         print(df[["date", "open", "high", "low", "close_last"]].tail(5))
+#
+#         df["date"] = pd.to_datetime(df["date"]).dt.tz_localize(None)
+#         df["date"] = df["date"].apply(lambda x: x.to_pydatetime())
+#
+#         fig = go.Figure(data=[go.Candlestick(
+#             x=df["date"],
+#             open=df["open"],
+#             high=df["high"],
+#             low=df["low"],
+#             close=df["close_last"],
+#             name=stock
+#         )])
+#     else:
+#         return jsonify({"error": "Unknown chart type"}), 400
+#
+#     fig.update_layout(
+#         title=f"{chart_type.capitalize()} Chart for {stock}",
+#         xaxis_title="Date",
+#         yaxis_title="Price"
+#     )
+#
+#     def convert_ndarrays(obj):
+#         if isinstance(obj, np.ndarray):
+#             return obj.tolist()
+#         raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+#
+#     return Response(json.dumps(fig.to_dict(), default=convert_ndarrays), mimetype="application/json")
+
+
 @app.route('/chart-data')
 def chart_data():
     stock = request.args.get("stock")
     chart_type = request.args.get("type")
 
-    print(f"Requested chart for stock: {stock}, type: {chart_type}")
+    print(f"📊 Chart requested: stock={stock}, type={chart_type}")
 
     if not stock or not chart_type:
         return jsonify({"error": "Missing parameters"}), 400
 
+    # Fetch and prepare data
     df = pd.read_sql_query(
         "SELECT date, close_last, open, high, low FROM stock_prices WHERE file_name = %s ORDER BY date ASC",
         con=engine,
         params=(stock,)
     )
 
-    print("✅ Raw data from DB:")
-    print(df.head(10))
-    print("Shape:", df.shape)
-    print("Dtypes:", df.dtypes)
-
     if df.empty:
-        return jsonify({"error": "No data found for that stock."}), 404
+        return jsonify({"error": "No data found."}), 404
 
-    # Convert & clean
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
-    print("✅ After to_datetime:")
-    print(df.dtypes)
     for col in ["open", "high", "low", "close_last"]:
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
     df = df.dropna(subset=["date", "open", "high", "low", "close_last"])
     df = df.sort_values("date")
 
-    print("✅ After cleaning:")
-    print(df.tail(5))
-    print("Range (close):", df["close_last"].min(), "→", df["close_last"].max())
-
     if df.empty:
         return jsonify({"error": "No valid data after cleaning."}), 400
 
-    # Plotting
+    # For line chart
     if chart_type == "line":
-        df["date_str"] = df["date"].dt.strftime("%Y-%m-%d")
         fig = go.Figure()
         fig.add_trace(go.Scatter(
-            x=df["date_str"],
-            y=df["close_last"],  # ← ✅ make sure this is here
+            x=df["date"].dt.strftime("%Y-%m-%d"),
+            y=df["close_last"],
             mode="lines",
             name="Close Price"
         ))
 
+    # For candlestick chart
     elif chart_type == "candlestick":
-        print("🔁 Plotting candlestick with OHLC:")
-        print(df[["date", "open", "high", "low", "close_last"]].tail(5))
         fig = go.Figure(data=[go.Candlestick(
-            x=df["date"],
+            x=df["date"].dt.strftime("%Y-%m-%d"),  # ✅ Pass ISO date strings!
             open=df["open"],
             high=df["high"],
             low=df["low"],
             close=df["close_last"],
             name=stock
         )])
-    # elif chart_type == "candlestick":
-    #     print("🔁 Plotting candlestick with OHLC:")
-    #     print(df[["date", "open", "high", "low", "close_last"]].tail(5))
-    #
-    #     df["date"] = pd.to_datetime(df["date"]).dt.tz_localize(None)
-    #     df["date"] = df["date"].apply(lambda x: x.to_pydatetime())
-    #
-    #     fig = go.Figure(data=[go.Candlestick(
-    #         x=df["date"],
-    #         open=df["open"],
-    #         high=df["high"],
-    #         low=df["low"],
-    #         close=df["close_last"],
-    #         name=stock
-    #     )])
     else:
-        return jsonify({"error": "Unknown chart type"}), 400
+        return jsonify({"error": "Unknown chart type."}), 400
 
     fig.update_layout(
         title=f"{chart_type.capitalize()} Chart for {stock}",
         xaxis_title="Date",
-        yaxis_title="Price"
+        yaxis_title="Price",
+        xaxis=dict(type="category" if chart_type == "candlestick" else "date")
     )
 
     def convert_ndarrays(obj):

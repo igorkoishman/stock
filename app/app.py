@@ -1,13 +1,12 @@
 import os
 import io
 import glob
-import json
 import numpy as np
 import pandas as pd
 import psycopg2
 import plotly.graph_objs as go
 from urllib.parse import urlparse
-from flask import Flask, request, render_template, jsonify, Response
+from flask import Flask, request, render_template, jsonify
 from sqlalchemy import create_engine
 
 # --- CONFIG ---
@@ -19,11 +18,10 @@ PG_PORT = int(os.environ.get('POSTGRES_PORT', 5432))
 
 app = Flask(__name__)
 
-# SQLAlchemy Engine for use with pandas
 engine = create_engine(f'postgresql+psycopg2://{PG_USER}:{PG_PASS}@{PG_HOST}:{PG_PORT}/{PG_DB}')
 
-# --- psycopg2 connection for inserts ---
 def get_db_connection():
+    """Creates a new psycopg2 connection."""
     return psycopg2.connect(
         host=PG_HOST,
         dbname=PG_DB,
@@ -32,8 +30,8 @@ def get_db_connection():
         port=PG_PORT
     )
 
-# --- Utilities ---
 def extract_file_base_name(filename_or_url):
+    """Extracts base filename from a path or URL (without extension)."""
     if filename_or_url.startswith('http'):
         parsed = urlparse(filename_or_url)
         file = os.path.basename(parsed.path)
@@ -43,6 +41,7 @@ def extract_file_base_name(filename_or_url):
     return base
 
 def parse_csv(content):
+    """Parses CSV content to DataFrame, cleans price and volume columns."""
     df = pd.read_csv(io.StringIO(content))
     for col in ['Close/Last', 'Open', 'High', 'Low']:
         df[col] = df[col].replace(r'[\$,]', '', regex=True).astype(float)
@@ -51,6 +50,7 @@ def parse_csv(content):
     return df
 
 def insert_data(df, file_name):
+    """Inserts stock DataFrame rows into DB, skipping duplicates."""
     with get_db_connection() as conn:
         with conn.cursor() as cur:
             for _, row in df.iterrows():
@@ -60,16 +60,60 @@ def insert_data(df, file_name):
                         (date, close_last, volume, open, high, low, file_name)
                         VALUES (%s, %s, %s, %s, %s, %s, %s)
                         ON CONFLICT (date, file_name) DO NOTHING;
-                    """, (row['Date'], row['Close/Last'], row['Volume'],
-                          row['Open'], row['High'], row['Low'], file_name.split('_')[0]))
+                    """, (
+                        row['Date'], row['Close/Last'], row['Volume'],
+                        row['Open'], row['High'], row['Low'],
+                        file_name.split('_')[0]
+                    ))
                 except Exception as e:
                     print(f"Error inserting row: {e}")
         conn.commit()
 
-# --- Routes ---
+def safe_float(val):
+    """Converts a value to float or returns None if not safe."""
+    try:
+        if val is None or pd.isna(val) or (isinstance(val, float) and (np.isnan(val) or np.isinf(val))):
+            return None
+        return float(val)
+    except Exception:
+        return None
+
+def generate_suggestions(df, price_col='close_last', avg_col='avg'):
+    """Generate buy/sell/hold suggestions based on price/avg crossovers."""
+    if avg_col not in df or df[avg_col].isna().all():
+        print("No average data, skipping suggestions.")
+        return []
+
+    suggestions = []
+    prev_relation = None
+    for idx, row in df.iterrows():
+        date = str(row['date_str']) if 'date_str' in row else str(row['date'])
+        price = safe_float(row[price_col])
+        avg = safe_float(row[avg_col])
+        if price is None or avg is None:
+            continue
+
+        action = "Nothing"
+        relation = price - avg
+        if prev_relation is not None:
+            if prev_relation < 0 and relation > 0:
+                action = "Buy"
+            elif prev_relation > 0 and relation < 0:
+                action = "Sell"
+        prev_relation = relation
+
+        suggestions.append({
+            "date": date,
+            "price": price,
+            "avg": avg,
+            "action": action
+        })
+    print(f"Generated {len(suggestions)} suggestion(s) based on average.")
+    return suggestions
 
 @app.route('/', methods=['GET'])
 def index():
+    """Main page: Displays table of stock data, with search support."""
     search = request.args.get('search', '').strip()
     base_query = """
         SELECT date, close_last, volume, open, high, low, file_name
@@ -117,6 +161,7 @@ def index():
 
 @app.route('/upload', methods=['POST'])
 def upload():
+    """Upload endpoint for CSV files or folders."""
     files = request.files.getlist('file')
     if files and files[0].filename != '':
         not_csv = [f.filename for f in files if not f.filename.lower().endswith('.csv')]
@@ -156,13 +201,35 @@ def upload():
 
 @app.route('/charts')
 def charts():
+    """Charts UI endpoint: List available stocks."""
     with engine.connect() as conn:
         stock_names = pd.read_sql_query("SELECT DISTINCT file_name FROM stock_prices ORDER BY file_name;", conn)
     return render_template("charts.html", stock_names=stock_names['file_name'].tolist())
 
+def sanitize_fig(obj):
+    """
+    Recursively sanitize Plotly figure dict:
+      - Converts np.ndarray -> list
+      - NaN/inf -> None
+    """
+    if isinstance(obj, dict):
+        return {k: sanitize_fig(v) for k, v in obj.items()}
+    elif isinstance(obj, list):
+        return [sanitize_fig(x) for x in obj]
+    elif isinstance(obj, np.ndarray):
+        return [sanitize_fig(x) for x in obj.tolist()]
+    elif isinstance(obj, float):
+        if np.isnan(obj) or np.isinf(obj):
+            return None
+        return obj
+    else:
+        return obj
 
 @app.route('/chart-data')
 def chart_data():
+    """
+    API endpoint: returns plotly JSON & suggestions for given stocks/date range/params.
+    """
     stocks = request.args.get("stock", "").split(",")
     start = request.args.get("start")
     end = request.args.get("end")
@@ -175,8 +242,6 @@ def chart_data():
 
     if include_current and not avg_days:
         return jsonify({"error": "Include current requires average_days_back."}), 400
-
-    print(f"📊 Chart request: stocks={stocks}, type={chart_type}, avg={avg_days}, include={include_current}")
 
     df = pd.read_sql_query(
         """
@@ -202,13 +267,13 @@ def chart_data():
     df["date_str"] = df["date"].dt.strftime("%Y-%m-%d")
 
     fig = go.Figure()
+    all_suggestions = []
 
     for stock in stocks:
         s_df = df[df["file_name"] == stock].copy()
         if s_df.empty:
             continue
 
-        # Main chart line
         if chart_type == "line":
             fig.add_trace(go.Scatter(
                 x=s_df["date_str"],
@@ -228,11 +293,11 @@ def chart_data():
         else:
             return jsonify({"error": f"Unknown chart type: {chart_type}"}), 400
 
-        # Optional overlay: average line
+        # Optional overlay: average line and suggestions
+        suggestions = []
         if avg_days:
             try:
                 window = int(avg_days)
-
                 if include_current:
                     s_df["avg"] = s_df["close_last"].rolling(window=window).mean()
                 else:
@@ -245,8 +310,14 @@ def chart_data():
                     name=f"{stock} Avg {window}d",
                     line=dict(dash="solid")
                 ))
+                suggestions = generate_suggestions(s_df)
             except Exception as e:
                 print(f"⚠️ Failed to calculate average for {stock}: {e}")
+
+        all_suggestions += [
+            dict(stock=stock, **item)
+            for item in (suggestions or [])
+        ]
 
     fig.update_layout(
         title=f"{chart_type.capitalize()} Chart for {', '.join(stocks)}",
@@ -259,14 +330,12 @@ def chart_data():
         margin=dict(t=60)
     )
 
-    def convert_ndarrays(obj):
-        if isinstance(obj, np.ndarray):
-            return obj.tolist()
-        raise TypeError(f"{type(obj).__name__} is not JSON serializable")
-
-    return Response(json.dumps(fig.to_dict(), default=convert_ndarrays), mimetype="application/json")
-
-
+    fig_dict = fig.to_dict()
+    fig_dict = sanitize_fig(fig_dict)
+    return jsonify({
+        "plotly_figure": fig_dict,
+        "suggestions": all_suggestions
+    })
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

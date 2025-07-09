@@ -51,22 +51,37 @@ if (avgDays) {
       }
 
       const plotDiv = document.getElementById("plotly-chart");
-      plotDiv.innerHTML = "";
-      Plotly.purge(plotDiv);
+plotDiv.innerHTML = "";
+Plotly.purge(plotDiv);
 
-      Plotly.newPlot(plotDiv, json.data, {
-        ...json.layout,
-        autosize: true,
-        margin: { t: 50 },
-        xaxis: {
-          title: "Date",
-          type: "category",
-          rangeslider: type === "candlestick" ? { visible: true } : undefined
-        },
-        yaxis: {
-          title: "Price"
-        }
+// Draw main chart
+Plotly.newPlot(plotDiv, json.plotly_figure.data, json.plotly_figure.layout);
+
+// Add suggestion markers
+if (json.suggestions && json.suggestions.length > 0) {
+  const annotations = [];
+  json.suggestions.forEach(s => {
+    if (s.action !== "Nothing") {
+      annotations.push({
+        x: s.date,
+        y: s.price,
+        text: s.action,
+        xref: 'x',
+        yref: 'y',
+        showarrow: true,
+        arrowhead: 2,
+        ax: 0,
+        ay: s.action === "Buy" ? -40 : 40,
+        bgcolor: s.action === "Buy" ? "#e8ffe8" : "#ffe8e8",
+        font: { color: s.action === "Buy" ? "green" : "red", size: 13 },
+        bordercolor: s.action === "Buy" ? "green" : "red",
+        borderwidth: 1
       });
+    }
+  });
+  Plotly.relayout(plotDiv, {annotations});
+}
+
 
     } catch (err) {
       console.error("❌ Chart fetch failed:", err);

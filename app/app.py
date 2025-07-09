@@ -243,7 +243,7 @@ def chart_data():
                     y=s_df["avg"],
                     mode="lines",
                     name=f"{stock} Avg {window}d",
-                    line=dict(dash="dot")
+                    line=dict(dash="solid")
                 ))
             except Exception as e:
                 print(f"⚠️ Failed to calculate average for {stock}: {e}")

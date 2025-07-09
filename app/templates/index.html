@@ -49,11 +49,14 @@
   <h2 class="mb-4 text-center fw-bold">Stock CSV Uploader & Database</h2>
   <div class="row g-4">
     <!-- Upload Panel -->
-    <div class="col-lg-5">
+    <div class="col-lg-4">
+      <button type="button" class="btn btn-info mb-2" data-bs-toggle="modal" data-bs-target="#csvExampleModal">
+  Show CSV Example
+</button>
       <form id="uploadForm" enctype="multipart/form-data" method="post" action="/upload">
         <label class="dropzone" id="dropzone">
           <input type="file" class="hidden-input" id="fileInput" name="file" accept=".csv" multiple>
-          <span id="dropzoneText">Drag & drop CSV file(s) here<br>or
+          <span id="dropzoneText">Drag & drop CSV file(s) here please upload in format {STOCK_LABEL}_{info}.csv<br>or
             <span class="text-primary text-decoration-underline" style="cursor:pointer;">browse</span>
           </span>
         </label>
@@ -73,10 +76,13 @@
     <!-- Table & Search Panel -->
     <div class="col-lg-7">
       <form method="get" class="mb-2 d-flex gap-2 align-items-center">
-        <input type="text" class="form-control" name="search" placeholder="Search (e.g. file_name:Visa, date:2024-05-01, volume:10000, etc.)" value="{{ search }}">
+        <input type="text" class="form-control" name="search" placeholder="Search (e.g. label:Visa, date:2024-05-01, volume:10000, etc.)" value="{{ search }}">
         <button class="btn btn-outline-secondary" type="submit">Search</button>
         <a href="/" class="btn btn-outline-secondary">Clear</a>
       </form>
+      <button type="button" class="btn btn-info mb-2" data-bs-toggle="modal" data-bs-target="#searchHelpModal">
+  🔍 Search Examples
+</button>
       <small class="text-muted">
         Search by <b>column:value</b> (e.g. <code>file_name:Visa</code>, <code>date:2024-05-01</code>, <code>volume:10000</code>), or just enter text to search file name/date.
       </small>
@@ -98,5 +104,64 @@
 
 <!-- Your Custom Script -->
 <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+<div class="modal fade" id="csvExampleModal" tabindex="-1" aria-labelledby="csvExampleLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content shadow rounded-4">
+      <div class="modal-header">
+        <h5 class="modal-title" id="csvExampleLabel">CSV Format Example</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <pre class="mb-2 bg-light p-3 rounded-3" style="font-size:1em;">
+Date,Close/Last,Volume,Open,High,Low
+07/02/2025,$212.44,67941810,$208.91,$213.34,$208.14
+07/01/2025,$207.82,78788870,$206.67,$210.19,$206.14
+06/30/2025,$205.17,91912820,$202.01,$207.39,$199.26
+06/27/2025,$201.08,73188570,$201.89,$203.22,$200.00
+        </pre>
+        <small class="text-muted">
+          Use these <b>exact headers</b>.<br>
+          Date: <b>MM/DD/YYYY</b><br>
+          Prices: With or without <b>$</b> symbol.
+        </small>
+      </div>
+      <div class="modal-footer">
+        <a href="/static/sample.csv" class="btn btn-outline-primary" download>Download sample.csv</a>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="modal fade" id="searchHelpModal" tabindex="-1" aria-labelledby="searchHelpModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header bg-primary text-white">
+        <h5 class="modal-title" id="searchHelpModalLabel">Search Combinations & Examples</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+
+        <ul>
+          <li><b>By file name:</b> <code>file_name:AAPL</code></li>
+          <li><b>By exact date:</b> <code>date:2024-06-30</code></li>
+          <li><b>By volume equal:</b> <code>volume:1000000</code></li>
+          <li><b>By high greater than:</b> <code>high:>150</code> or <code>high&gt;150</code></li>
+          <li><b>By low less than:</b> <code>low:&lt;80</code></li>
+          <li><b>By close/last between:</b> <code>close_last:&gt;100 and close_last:&lt;120</code></li>
+          <li><b>Combined search:</b> <code>file_name:AAPL and high:&gt;150 and date:2024-06-30</code></li>
+          <li><b>Partial match:</b> <code>Visa</code> (finds any file_name or date containing "Visa")</li>
+        </ul>
+        <hr>
+        <div class="small text-muted">
+          <b>Tip:</b> For numeric fields, you can use <code>&gt;</code>, <code>&lt;</code>, <code>&gt;=</code>, <code>&lt;=</code>, or <code>=</code>.<br>
+          Example: <code>volume:&gt;50000</code>, <code>high:&lt;100</code>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-primary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
 </body>
 </html>

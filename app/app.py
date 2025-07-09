@@ -8,6 +8,7 @@ import plotly.graph_objs as go
 from urllib.parse import urlparse
 from flask import Flask, request, render_template, jsonify
 from sqlalchemy import create_engine
+import re
 
 # --- CONFIG ---
 PG_HOST = os.environ.get('POSTGRES_HOST', 'localhost')
@@ -57,13 +58,13 @@ def insert_data(df, file_name):
                 try:
                     cur.execute("""
                         INSERT INTO stock_prices
-                        (date, close_last, volume, open, high, low, file_name)
+                        (date, close_last, volume, open, high, low, label)
                         VALUES (%s, %s, %s, %s, %s, %s, %s)
-                        ON CONFLICT (date, file_name) DO NOTHING;
+                        ON CONFLICT (date, label) DO NOTHING;
                     """, (
                         row['Date'], row['Close/Last'], row['Volume'],
                         row['Open'], row['High'], row['Low'],
-                        file_name.split('_')[0]
+                        file_name.split('_')[0].upper()
                     ))
                 except Exception as e:
                     print(f"Error inserting row: {e}")
@@ -111,51 +112,63 @@ def generate_suggestions(df, price_col='close_last', avg_col='avg'):
     print(f"Generated {len(suggestions)} suggestion(s) based on average.")
     return suggestions
 
+def parse_search(search):
+    """Returns (where_clause, params) for SQL based on advanced search string."""
+    conditions = []
+    params = []
+    # Split on 'and' or ',' (case-insensitive), remove empty entries
+    parts = [p.strip() for p in re.split(r'\band\b|,', search, flags=re.I) if p.strip()]
+    valid_cols = {'label', 'date', 'volume', 'close_last', 'open', 'high', 'low'}
+
+    for part in parts:
+        if ':' in part:
+            col, val = [x.strip() for x in part.split(':', 1)]
+            col = col.lower()
+            if col in valid_cols:
+                if col == 'label':
+                    # Support =, ==, or default equals, and ilike for partial
+                    m = re.match(r'^(=|==)?\s*(.*)$', val)
+                    if m:
+                        conditions.append(f"{col} ILIKE %s")
+                        params.append(f'%{m.group(2)}%')
+                elif col == 'date':
+                    conditions.append("CAST(date AS TEXT) ILIKE %s")
+                    params.append(f'%{val}%')
+                elif col in {'volume', 'close_last', 'open', 'high', 'low'}:
+                    m = re.match(r'^(>=|<=|>|<|=)?\s*(.*)$', val)
+                    if m:
+                        op = m.group(1) or '='
+                        number = m.group(2).replace(',', '').replace(' ', '')
+                        try:
+                            floatval = float(number)
+                            conditions.append(f"{col} {op} %s")
+                            params.append(floatval)
+                        except ValueError:
+                            pass
+        else:
+            # fallback: plain text search on label or date
+            conditions.append("(label ILIKE %s OR CAST(date AS TEXT) ILIKE %s)")
+            params.extend([f'%{part}%', f'%{part}%'])
+
+    if conditions:
+        where_clause = "WHERE " + " AND ".join(conditions)
+    else:
+        where_clause = ""
+    return where_clause, params
+
 @app.route('/', methods=['GET'])
 def index():
-    """Main page: Displays table of stock data, with search support."""
+    """Main page: Displays table of stock data, with multi-condition search support."""
     search = request.args.get('search', '').strip()
     base_query = """
-        SELECT date, close_last, volume, open, high, low, file_name
+        SELECT date, close_last, volume, open, high, low, label
         FROM stock_prices
     """
-    params = []
-    where_clause = ""
+    where_clause, params = parse_search(search) if search else ("", [])
+    query = base_query + " " + where_clause + " ORDER BY date DESC, label ASC"
 
-    if search:
-        if ':' in search:
-            parts = [part.strip() for part in search.split(':', 1)]
-            if len(parts) == 2:
-                col, val = parts
-                col = col.lower()
-                valid_cols = {'file_name', 'date', 'volume', 'close_last', 'open', 'high', 'low'}
-                if col in valid_cols:
-                    if col == 'file_name':
-                        where_clause = f"WHERE {col} ILIKE %s"
-                        params = [f'%{val}%']
-                    elif col == 'date':
-                        where_clause = "WHERE CAST(date AS TEXT) ILIKE %s"
-                        params = [f'%{val}%']
-                    elif col == 'volume':
-                        try:
-                            intval = int(val.replace(',', '').replace(' ', ''))
-                            where_clause = f"WHERE {col} = %s"
-                            params = [intval]
-                        except ValueError:
-                            where_clause = "WHERE 1=0"
-                    else:
-                        try:
-                            floatval = float(val)
-                            where_clause = f"WHERE ABS({col} - %s) < 1e-6"
-                            params = [floatval]
-                        except ValueError:
-                            where_clause = "WHERE 1=0"
-        else:
-            where_clause = "WHERE file_name ILIKE %s OR CAST(date AS TEXT) ILIKE %s"
-            params = [f'%{search}%', f'%{search}%']
-
-    query = base_query + " " + where_clause + " ORDER BY date DESC, file_name ASC"
-    df = pd.read_sql_query(query, engine, params=params)
+    params_tuple = tuple(params) if params else ()
+    df = pd.read_sql_query(query, engine, params=params_tuple)
     table_html = df.to_html(classes="table table-striped table-bordered align-middle", index=False, border=0, justify="center")
     return render_template("index.html", table_html=table_html, search=search)
 
@@ -203,8 +216,8 @@ def upload():
 def charts():
     """Charts UI endpoint: List available stocks."""
     with engine.connect() as conn:
-        stock_names = pd.read_sql_query("SELECT DISTINCT file_name FROM stock_prices ORDER BY file_name;", conn)
-    return render_template("charts.html", stock_names=stock_names['file_name'].tolist())
+        stock_names = pd.read_sql_query("SELECT DISTINCT label FROM stock_prices ORDER BY label;", conn)
+    return render_template("charts.html", stock_names=stock_names['label'].tolist())
 
 def sanitize_fig(obj):
     """
@@ -245,9 +258,9 @@ def chart_data():
 
     df = pd.read_sql_query(
         """
-        SELECT date, close_last, open, high, low, file_name
+        SELECT date, close_last, open, high, low, label
         FROM stock_prices
-        WHERE file_name = ANY(%s)
+        WHERE label = ANY(%s)
           AND date BETWEEN %s AND %s
         ORDER BY date ASC
         """,
@@ -263,14 +276,14 @@ def chart_data():
         df[col] = pd.to_numeric(df[col], errors="coerce")
 
     df = df.dropna(subset=["date", "open", "high", "low", "close_last"])
-    df = df.sort_values(["file_name", "date"])
+    df = df.sort_values(["label", "date"])
     df["date_str"] = df["date"].dt.strftime("%Y-%m-%d")
 
     fig = go.Figure()
     all_suggestions = []
 
     for stock in stocks:
-        s_df = df[df["file_name"] == stock].copy()
+        s_df = df[df["label"] == stock].copy()
         if s_df.empty:
             continue
 

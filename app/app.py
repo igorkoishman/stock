@@ -10,6 +10,7 @@ from flask import Flask, request, render_template, jsonify
 from sqlalchemy import create_engine
 import re
 
+
 # --- CONFIG ---
 PG_HOST = os.environ.get('POSTGRES_HOST', 'localhost')
 PG_DB   = os.environ.get('POSTGRES_DB', 'stocks')

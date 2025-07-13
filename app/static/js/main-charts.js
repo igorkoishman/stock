@@ -62,19 +62,47 @@ if (json.suggestions && json.suggestions.length > 0) {
   const annotations = [];
   json.suggestions.forEach(s => {
     if (s.action !== "Nothing") {
+      let color, bgcolor, bordercolor, ay;
+      if (s.action === "Long") {
+        color = "#228B22"; // forest green
+        bgcolor = "#e8ffe8";
+        bordercolor = "#228B22";
+        ay = -40;
+      } else if (s.action === "Sell") {
+        color = "#B22222"; // firebrick red
+        bgcolor = "#ffe8e8";
+        bordercolor = "#B22222";
+        ay = 40;
+      } else if (s.action === "Short") {
+        color = "#800080"; // vivid purple
+        bgcolor = "#f5e6ff"; // a little less blue, more contrast
+        bordercolor = "#800080";
+        ay = 40;
+      } else {
+        color = "black";
+        bgcolor = "#f0f0f0";
+        bordercolor = "gray";
+        ay = 0;
+      }
+let percentText = (s.percentage !== undefined) ? `<br>Change: ${s.percentage}%` : "";
       annotations.push({
         x: s.date,
         y: s.price,
         text: s.action,
+        hovertext: `Price: ${s.price}<br>Avg: ${s.avg}${percentText}`,
+        hoverlabel: {
+        bgcolor: bgcolor,
+        font: { color: color }
+        },
         xref: 'x',
         yref: 'y',
         showarrow: true,
         arrowhead: 2,
         ax: 0,
-        ay: s.action === "Buy" ? -40 : 40,
-        bgcolor: s.action === "Buy" ? "#e8ffe8" : "#ffe8e8",
-        font: { color: s.action === "Buy" ? "green" : "red", size: 13 },
-        bordercolor: s.action === "Buy" ? "green" : "red",
+        ay: ay,
+        bgcolor: bgcolor,
+        font: { color: color, size: 13 },
+        bordercolor: bordercolor,
         borderwidth: 1
       });
     }

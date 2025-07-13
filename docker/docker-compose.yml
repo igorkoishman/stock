@@ -20,6 +20,7 @@ services:
     build:
       context: ..
       dockerfile: docker/Dockerfile
+    image: igorkoishman/stocks-app:latest
     ports:
       - "5000:5000"
     environment:

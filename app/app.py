@@ -85,30 +85,76 @@ def generate_suggestions(df, price_col='close_last', avg_col='avg'):
         print("No average data, skipping suggestions.")
         return []
 
+    df['avg_prev'] = df[avg_col].shift(1)
+    df['avg_gradient'] = df[avg_col] - df['avg_prev']
+    df['diff'] = df[price_col] - df[avg_col]
+    df['crossing'] = df['diff'] * df['diff'].shift(1) < 0
+
     suggestions = []
-    prev_relation = None
+    action="Nothing"
+    last_action="Nothing"
+    long_position = False
+    first_action = {
+
+
+    }
     for idx, row in df.iterrows():
         date = str(row['date_str']) if 'date_str' in row else str(row['date'])
-        price = safe_float(row[price_col])
+        price = safe_float(row[price_col] + 1)
         avg = safe_float(row[avg_col])
-        if price is None or avg is None:
-            continue
+        gradient = row['avg_gradient']
+        crossing = row['crossing']
+        diff=row['diff']
+        prev_price = df.iloc[idx - 1][price_col] if idx > 0 else None
+        prev_avg = df.iloc[idx - 1][avg_col] if idx > 0 else None
 
         action = "Nothing"
-        relation = price - avg
-        if prev_relation is not None:
-            if prev_relation < 0 and relation > 0:
-                action = "Buy"
-            elif prev_relation > 0 and relation < 0:
+        if long_position is False and crossing is True:
+            if gradient > 0 and diff > 0:
+                action = "Long"
+                long_position = True
+            elif gradient < 0 and diff < 0:
+                action = "Short"
+                long_position = True
+        elif long_position is True and last_action == "Long" and crossing is True:
+            if  ((gradient > 0 and diff < 0) or (gradient > 0 and diff > 0)) :
                 action = "Sell"
-        prev_relation = relation
+                long_position=False
+            elif  gradient < 0 and diff < 0:
+                # action = "Sell"
+                action = "Short"
+        elif long_position is True and last_action == "Short" and crossing is True:
+            if ((gradient > 0 and diff < 0) or (gradient < 0 and diff > 0)):
+                action = "Sell"
+                long_position = False
+            elif gradient > 0 and diff > 0:
+                # action = "Sell"
+                action = "Long"
+                long_position = True
 
-        suggestions.append({
+        if action in ["Long", "Short", "Sell"]:
+            last_action = action
+        # suggestions.append({
+        #     "date": date,
+        #     "price": price,
+        #     "avg": avg,
+        #     "action": action,
+        #     "percentage": 10 if action == "Sell" else None
+        # })
+
+        suggestion = {
             "date": date,
             "price": price,
             "avg": avg,
             "action": action
-        })
+        }
+
+        if action == "Sell":
+            suggestion["percentage"] = 10  # or your calculated value
+
+        suggestions.append(suggestion)
+
+
     print(f"Generated {len(suggestions)} suggestion(s) based on average.")
     return suggestions
 

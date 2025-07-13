@@ -1,6 +1,8 @@
 import os
 import io
 import glob
+from datetime import datetime
+
 import numpy as np
 import pandas as pd
 import psycopg2
@@ -92,22 +94,15 @@ def generate_suggestions(df, price_col='close_last', avg_col='avg'):
     df['crossing'] = df['diff'] * df['diff'].shift(1) < 0
 
     suggestions = []
-    action="Nothing"
     last_action="Nothing"
     long_position = False
-    first_action = {
-
-
-    }
     for idx, row in df.iterrows():
         date = str(row['date_str']) if 'date_str' in row else str(row['date'])
-        price = safe_float(row[price_col] + 1)
+        price = safe_float(row[price_col])
         avg = safe_float(row[avg_col])
         gradient = row['avg_gradient']
         crossing = row['crossing']
         diff=row['diff']
-        prev_price = df.iloc[idx - 1][price_col] if idx > 0 else None
-        prev_avg = df.iloc[idx - 1][avg_col] if idx > 0 else None
 
         action = "Nothing"
         if long_position is False and crossing is True:
@@ -135,13 +130,6 @@ def generate_suggestions(df, price_col='close_last', avg_col='avg'):
 
         if action in ["Long", "Short", "Sell"]:
             last_action = action
-        # suggestions.append({
-        #     "date": date,
-        #     "price": price,
-        #     "avg": avg,
-        #     "action": action,
-        #     "percentage": 10 if action == "Sell" else None
-        # })
 
         suggestion = {
             "date": date,
@@ -149,10 +137,6 @@ def generate_suggestions(df, price_col='close_last', avg_col='avg'):
             "avg": avg,
             "action": action
         }
-
-        if action == "Sell":
-            suggestion["percentage"] = 10  # or your calculated value
-
         suggestions.append(suggestion)
 
 
@@ -392,10 +376,107 @@ def chart_data():
 
     fig_dict = fig.to_dict()
     fig_dict = sanitize_fig(fig_dict)
+
+    default_operation = get_long_decision_summary(all_suggestions)
+    cleaned = clean_suggestions_keep_last_as_sell(all_suggestions)
+    trade_table = analyze_trades(cleaned)
+    for trade in trade_table:
+        print(trade)
     return jsonify({
         "plotly_figure": fig_dict,
-        "suggestions": all_suggestions
+        "suggestions": all_suggestions,
+        "default_operation": default_operation,
+        "trade_table": trade_table
     })
+def analyze_trades(suggestions):
+    trades = []
+    i = 0
+    while i < len(suggestions) - 1:
+        entry = suggestions[i]
+        exit = suggestions[i+1]
+        if entry["action"] not in ["Long", "Short"] or exit["action"] != "Sell":
+            i += 1
+            continue  # Skip malformed pairs
 
+        # Calculate PnL percent
+        if entry["action"] == "Long":
+            pnl_pct = 100 * (exit["price"] - entry["price"]) / entry["price"]
+        elif entry["action"] == "Short":
+            pnl_pct = 100 * (entry["price"] - exit["price"]) / entry["price"]
+        else:
+            pnl_pct = None
+
+        # Calculate holding days (optional)
+        try:
+            holding_days = (datetime.strptime(exit["date"], "%Y-%m-%d") -
+                            datetime.strptime(entry["date"], "%Y-%m-%d")).days
+        except Exception:
+            holding_days = None
+
+        if entry["action"] == "Long":
+            pct = 100 * (exit["price"] / entry["price"])
+        elif entry["action"] == "Short":
+            pct = 100 * (entry["price"] / exit["price"])
+        else:
+            pct = None
+
+        trades.append({
+            "stock": entry["stock"],
+            "entry_action": entry["action"],
+            "entry_date": entry["date"],
+            "entry_price": entry["price"],
+            "exit_date": exit["date"],
+            "exit_price": exit["price"],
+            "pnl_pct": round(pnl_pct, 2) if pnl_pct is not None else None,  # as float (profit, e.g., 10.5)
+            "pnl_percentage": f"{round(pct, 2)}%" if pct is not None else None,  # as string (e.g. "110.2%")
+            "holding_days": holding_days
+        })
+        i += 2  # Move to next pair
+
+    return trades
+def get_long_decision_summary(suggestions):
+    first_oper = next((s for s in suggestions if s['action'] in ["Long", "Short"]), None)
+    if not first_oper:
+        return None  # or return a dict with None/empty values
+
+    # Get last suggestion
+    last = suggestions[-1]
+
+    # Calculate percentage change
+    try:
+        percent_change = 100 * (last['price'] - first_oper['price']) / first_oper['price']
+    except Exception:
+        percent_change = None
+
+    # Build summary struct
+    summary = {
+        "first_operation_date": first_oper["date"],
+        "first_operation_price": first_oper["price"],
+        "last_operation_date": last["date"],
+        "last_operation_price": last["price"],
+        "percent_change": round(percent_change, 2) if percent_change is not None else None
+    }
+    return summary
+
+
+def clean_suggestions_keep_last_as_sell(suggestions):
+    """
+    Removes all 'Nothing' operations except the last one.
+    If the last operation is 'Nothing', it is kept but replaced with 'Sell'.
+    Returns the cleaned list of suggestions.
+    """
+    if not suggestions:
+        return []
+
+    # Remove all 'Nothing' except for the last item
+    cleaned = [s for s in suggestions[:-1] if s['action'] != "Nothing"]
+
+    # Handle the last item
+    last = suggestions[-1].copy()
+    if last['action'] == "Nothing":
+        last['action'] = "Sell"
+    cleaned.append(last)
+
+    return cleaned
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

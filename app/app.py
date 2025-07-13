@@ -432,7 +432,6 @@ def analyze_trades(suggestions):
             "holding_days": holding_days
         })
         i += 2  # Move to next pair
-
     return trades
 def get_long_decision_summary(suggestions):
     first_oper = next((s for s in suggestions if s['action'] in ["Long", "Short"]), None)

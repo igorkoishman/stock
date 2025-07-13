@@ -22,22 +22,17 @@ jobs:
         with:
           fetch-depth: 0
 
-      # Use PR labels for version bump (uses PR label 'major'/'minor' or defaults to 'patch')
-      - name: Get PR for Commit
-        id: pr
-        uses: juliangruber/find-pull-request-action@v1
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          commit: ${{ github.sha }}
-
-      - name: Print PR labels
-        run:
-          echo "PR labels: ${{ steps.pr.outputs.labels }}"
+      - name: Get PR labels
+        id: getlabels
+        run: |
+          echo "LABELS<<EOF" >> $GITHUB_ENV
+          echo "${{ toJson(github.event.pull_request.labels) }}" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
 
       - name: Determine version bump
         id: bump
         run: |
-          LABELS="${{ steps.pr.outputs.labels }}"
+          LABELS="${{ toJson(github.event.pull_request.labels) }}"
           if [[ "$LABELS" == *"major"* ]]; then
             echo "BUMP=major" >> $GITHUB_ENV
           elif [[ "$LABELS" == *"minor"* ]]; then
@@ -46,7 +41,6 @@ jobs:
             echo "BUMP=patch" >> $GITHUB_ENV
           fi
 
-      # Tag with next semver using PR label bump
       - name: GitHub Tag Action
         id: tag
         uses: mathieudutour/github-tag-action@v6.2
@@ -56,14 +50,12 @@ jobs:
           release_branches: "main"
           default_bump: ${{ env.BUMP }}
 
-      # Docker login (same as your working keys!)
       - name: Log in to Docker Hub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      # Build & push app image (from ./docker/Dockerfile, context ./app)
       - name: Build and push app image
         uses: docker/build-push-action@v5
         with:

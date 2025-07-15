@@ -9,7 +9,6 @@ document.addEventListener("DOMContentLoaded", function () {
       pageLength: 20,
     });
   }
-
   // --- Upload Elements ---
   const dropzone = document.getElementById("dropzone");
   const fileInput = document.getElementById("fileInput");

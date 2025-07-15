@@ -8,9 +8,14 @@ import pandas as pd
 import psycopg2
 import plotly.graph_objs as go
 from urllib.parse import urlparse
-from flask import Flask, request, render_template, jsonify
+from flask import Flask, request, render_template, jsonify, flash, redirect, url_for
 from sqlalchemy import create_engine
 import re
+from flask_login import LoginManager, login_user, login_required, logout_user, UserMixin, current_user
+from werkzeug.security import generate_password_hash, check_password_hash
+from flask_login import UserMixin
+
+
 
 
 # --- CONFIG ---
@@ -21,6 +26,10 @@ PG_PASS = os.environ.get('POSTGRES_PASSWORD', 'postgres')
 PG_PORT = int(os.environ.get('POSTGRES_PORT', 5432))
 
 app = Flask(__name__)
+app.secret_key = os.environ.get("SECRET_KEY", "dev_super_secret_change_me")
+login_manager = LoginManager()
+login_manager.login_view = "login"
+login_manager.init_app(app)
 
 engine = create_engine(f'postgresql+psycopg2://{PG_USER}:{PG_PASS}@{PG_HOST}:{PG_PORT}/{PG_DB}')
 
@@ -188,6 +197,7 @@ def parse_search(search):
     return where_clause, params
 
 @app.route('/', methods=['GET'])
+@login_required
 def index():
     """Main page: Displays table of stock data, with multi-condition search support."""
     search = request.args.get('search', '').strip()
@@ -244,6 +254,7 @@ def upload():
     return jsonify({'error': 'No files or folder path provided.'}), 400
 
 @app.route('/charts')
+@login_required
 def charts():
     """Charts UI endpoint: List available stocks."""
     with engine.connect() as conn:
@@ -270,6 +281,7 @@ def sanitize_fig(obj):
         return obj
 
 @app.route('/chart-data')
+@login_required
 def chart_data():
     """
     API endpoint: returns plotly JSON & suggestions for given stocks/date range/params.
@@ -477,5 +489,81 @@ def clean_suggestions_keep_last_as_sell(suggestions):
     cleaned.append(last)
 
     return cleaned
+
+class User(UserMixin):
+    def __init__(self, id_, username):
+        self.id = id_
+        self.username = username
+
+    @staticmethod
+    def get(user_id):
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id, username FROM users WHERE id=%s", (user_id,))
+                row = cur.fetchone()
+                if row:
+                    return User(row[0], row[1])
+        return None
+
+    @staticmethod
+    def find_by_username(username):
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id, username FROM users WHERE username=%s", (username,))
+                row = cur.fetchone()
+                if row:
+                    return User(row[0], row[1])
+        return None
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.get(user_id)
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        username = request.form['username'].strip()
+        password = request.form['password']
+        if not username or not password:
+            flash('Username and password required.', 'danger')
+            return render_template('register.html')
+        if User.find_by_username(username):
+            flash('Username already exists.', 'danger')
+            return render_template('register.html')
+        pw_hash = generate_password_hash(password)
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("INSERT INTO users (username, password_hash) VALUES (%s, %s)", (username, pw_hash))
+                conn.commit()
+        flash('Registered! Please log in.', 'success')
+        return redirect(url_for('login'))
+    return render_template('register.html')
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username'].strip()
+        password = request.form['password']
+        user = User.find_by_username(username)
+        if user and check_password_hash(get_user_password_hash(username), password):
+            login_user(user)
+            flash('Logged in successfully.', 'success')
+            return redirect(url_for('index'))
+        flash('Invalid credentials.', 'danger')
+    return render_template('login.html')
+
+def get_user_password_hash(username):
+    with get_db_connection() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT password_hash FROM users WHERE username=%s", (username,))
+            row = cur.fetchone()
+            return row[0] if row else None
+
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    flash('You have been logged out.', 'info')
+    return redirect(url_for('login'))
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)

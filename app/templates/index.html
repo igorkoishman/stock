@@ -42,6 +42,12 @@
   </style>
 </head>
 <body>
+{% if current_user.is_authenticated %}
+  <div class="text-end">
+    Logged in as <b>{{ current_user.username }}</b>
+    <a href="{{ url_for('logout') }}" class="btn btn-link">Logout</a>
+  </div>
+{% endif %}
 <div class="text-center mb-3">
   <a href="/charts" class="btn btn-outline-primary">📈 Go to Charts</a>
 </div>

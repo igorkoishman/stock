@@ -6,7 +6,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
     ports:
-      - "5432:5432"
+      - "55432:5432"
     volumes:
       - ../db/init.sql:/docker-entrypoint-initdb.d/init.sql
       - pgdata:/var/lib/postgresql/data
@@ -15,6 +15,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+    restart: always
 
   web:
     build:
@@ -22,7 +23,7 @@ services:
       dockerfile: docker/Dockerfile
     image: igorkoishman/stocks-app:latest
     ports:
-      - "5000:5000"
+      - "5050:5000"
     environment:
       POSTGRES_HOST: db
       POSTGRES_DB: stocks
@@ -30,10 +31,11 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_PORT: 5432
     volumes:
-      - /Users/ikoishman/Downloads/Raw_Data:/data
+      - /volume1/docker/stock/Raw_Data:/data
     depends_on:
       db:
         condition: service_healthy
+    restart: always
 
 volumes:
   pgdata:

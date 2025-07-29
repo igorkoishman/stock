@@ -10,7 +10,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const endDate = document.getElementById("end_date").value;
     const type = document.getElementById("type").value;
 
-    if (!selectedStocks.length || !startDate || !endDate || !type) {
+    if (!selectedStocks.length || /*!startDate || !endDate ||*/ !type) {
       alert("Please select stock(s), chart type, and date range.");
       return;
     }

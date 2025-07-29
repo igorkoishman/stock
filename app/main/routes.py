@@ -94,24 +94,28 @@ def chart_data():
     avg_days = request.args.get("avg")
     include_current = request.args.get("include") == "1"
 
-    if not stocks or not start or not end or not chart_type:
+    if not stocks or not chart_type:
         return jsonify({"error": "Missing required parameters."}), 400
 
     if include_current and not avg_days:
         return jsonify({"error": "Include current requires average_days_back."}), 400
 
     engine = get_engine()
-    df = pd.read_sql_query(
-        """
+    query = """
         SELECT date, close_last, open, high, low, label
         FROM stock_prices
         WHERE label = ANY(%s)
-          AND date BETWEEN %s AND %s
-        ORDER BY date ASC
-        """,
-        con=engine,
-        params=(stocks, start, end)
-    )
+    """
+    params = (stocks,)
+
+    if start and end:
+        query += " AND date BETWEEN %s AND %s"
+        params.extend([start, end])
+
+    query += " ORDER BY date ASC"
+    print("Params:", params)
+    print("Param types:", [type(p) for p in params])
+    df = pd.read_sql_query(query, con=engine, params=params)
 
     if df.empty:
         return jsonify({"error": "No data found in range."}), 404

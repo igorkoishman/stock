@@ -41,34 +41,31 @@ document.addEventListener("DOMContentLoaded", () => {
       const res = await fetch(`/chart-data?${query.toString()}`);
       const json = await res.json();
 
-      if (!res.ok) {
-        document.getElementById("plotly-chart").innerHTML =
-          `<div class="alert alert-danger mt-3">${json.error}</div>`;
-        return;
+      if (!res.ok || !json.plotly_figure) {
+        throw new Error(json.error || "Server returned no chart data");
       }
 
       const plotDiv = document.getElementById("plotly-chart");
       plotDiv.innerHTML = "";
       Plotly.purge(plotDiv);
 
-      // Build annotation markers
       const annotations = [];
-      if (json.suggestions && json.suggestions.length > 0) {
+      if (Array.isArray(json.suggestions)) {
         json.suggestions.forEach(s => {
           if (s.action !== "Nothing") {
             let color, bgcolor, bordercolor, ay;
             if (s.action === "Long") {
-              color = "#228B22"; // forest green
+              color = "#228B22";
               bgcolor = "#e8ffe8";
               bordercolor = "#228B22";
               ay = -40;
             } else if (s.action === "Sell") {
-              color = "#B22222"; // firebrick red
+              color = "#B22222";
               bgcolor = "#ffe8e8";
               bordercolor = "#B22222";
               ay = 40;
             } else if (s.action === "Short") {
-              color = "#800080"; // vivid purple
+              color = "#800080";
               bgcolor = "#f5e6ff";
               bordercolor = "#800080";
               ay = 40;
@@ -78,7 +75,8 @@ document.addEventListener("DOMContentLoaded", () => {
               bordercolor = "gray";
               ay = 0;
             }
-            let percentText = (s.percentage !== undefined) ? `<br>Change: ${s.percentage}%` : "";
+
+            const percentText = s.percentage !== undefined ? `<br>Change: ${s.percentage}%` : "";
             annotations.push({
               x: s.date,
               y: s.price,
@@ -103,13 +101,11 @@ document.addEventListener("DOMContentLoaded", () => {
         });
       }
 
-      // Prepare entry/exit shapes for the plot
-      let layout = {...json.plotly_figure.layout}; // shallow copy
-      if (annotations.length > 0) {
-        layout.annotations = annotations;
-      }
+      let layout = { ...json.plotly_figure.layout };
+      if (annotations.length > 0) layout.annotations = annotations;
+
       if (json.default_operation) {
-        const entry = json.default_operation.first_operation_date || json.default_operation.first_operation_date;
+        const entry = json.default_operation.first_operation_date;
         const exit = json.default_operation.last_operation_date;
         if (entry && exit) {
           layout.shapes = (layout.shapes || []).concat([
@@ -118,31 +114,31 @@ document.addEventListener("DOMContentLoaded", () => {
               xref: 'x', yref: 'paper',
               x0: entry, x1: entry,
               y0: 0, y1: 1,
-              line: {color: 'green', width: 2, dash: 'dash'},
+              line: { color: 'green', width: 2, dash: 'dash' },
             },
             {
               type: 'line',
               xref: 'x', yref: 'paper',
               x0: exit, x1: exit,
               y0: 0, y1: 1,
-              line: {color: 'red', width: 2, dash: 'dot'},
+              line: { color: 'red', width: 2, dash: 'dot' },
             }
           ]);
         }
       }
-console.log("Plotly data", json.plotly_figure.data);
-console.log("Plotly layout", layout);
-console.log("Suggestions", json.suggestions);
-      // Draw main chart (with markers and shapes)
+
+      console.log("Plotly data", json.plotly_figure.data);
+      console.log("Plotly layout", layout);
+      console.log("Suggestions", json.suggestions);
+
       Plotly.newPlot(plotDiv, json.plotly_figure.data, layout);
 
-      // Render the operation summary table (finance-style)
+      // Operation Summary
       if (json.default_operation) {
-
         const op = json.default_operation;
         let rows = "";
         for (let key in op) {
-          let label = key.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase());
+          const label = key.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase());
           rows += `<tr><th>${label}</th><td>${op[key]}</td></tr>`;
         }
         document.getElementById("default-operation-summary-table").innerHTML = `
@@ -154,60 +150,53 @@ console.log("Suggestions", json.suggestions);
       } else {
         document.getElementById("default-operation-summary-table").innerHTML = "";
       }
-// Add the cumulative return column to the data
-addCumulativeColumn(json.trade_table, 'pnl_percentage', 'cumulative_return');
 
-// The rest is your generic table rendering (from earlier)
-if (json.trade_table && json.trade_table.length > 0) {
-  // 1. Dynamically gather all unique columns
-  let columns = Object.keys(json.trade_table[0]);
+      // ✅ Fix: only run if trade_table exists
+      if (Array.isArray(json.trade_table)&& json.trade_table.length > 0) {
+        addCumulativeColumn(json.trade_table, 'pnl_percentage', 'cumulative_return');
 
-  // 2. Move 'stock' to the first column, if present
-  if (columns.includes("stock")) {
-    columns = ["stock", ...columns.filter(col => col !== "stock")];
-  }
+        const columns = Object.keys(json.trade_table[0]);
+        if (columns.includes("stock")) {
+          columns.unshift(...columns.splice(columns.indexOf("stock"), 1));
+        }
 
-  // 3. Generate header row
-  let header = columns.map(col =>
-    `<th>${col.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase())}</th>`
-  ).join("");
+        const header = columns.map(col =>
+          `<th>${col.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase())}</th>`
+        ).join("");
 
-  // 4. Generate table body
-  let rows = json.trade_table.map(trade => {
-    return "<tr>" + columns.map(col =>
-      `<td>${trade[col] !== undefined ? trade[col] : ""}</td>`
-    ).join("") + "</tr>";
-  }).join("");
+        const rows = json.trade_table.map(trade =>
+          `<tr>${columns.map(col => `<td>${trade[col] !== undefined ? trade[col] : ""}</td>`).join("")}</tr>`
+        ).join("");
 
-  // 5. Render table
-  document.getElementById("trade-table").innerHTML = `
-    <h5>Trade Analysis Table</h5>
-    <table class="table table-bordered table-striped">
-      <thead><tr>${header}</tr></thead>
-      <tbody>${rows}</tbody>
-    </table>
-  `;
-} else {
-  document.getElementById("trade-table").innerHTML = "";
-}
+        document.getElementById("trade-table").innerHTML = `
+          <h5>Trade Analysis Table</h5>
+          <table class="table table-bordered table-striped">
+            <thead><tr>${header}</tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+        `;
+      } else {
+        document.getElementById("trade-table").innerHTML = "";
+      }
 
     } catch (err) {
       console.error("❌ Chart fetch failed:", err);
       document.getElementById("plotly-chart").innerHTML =
-        `<div class="alert alert-danger mt-3">Chart load failed</div>`;
+        `<div class="alert alert-danger mt-3">Chart load failed: ${err.message}</div>`;
     }
   });
 });
 
-
 function addCumulativeColumn(data, percentageKey = 'pnl_percentage', newCol = 'cumulative_return') {
+  if (!Array.isArray(data)) {
+    console.warn("⚠️ addCumulativeColumn skipped: data is not an array");
+    return;
+  }
   let cumulative = 1;
   for (let i = 0; i < data.length; ++i) {
-    // Get value as float (handle possible missing, e.g. "")
-    let pctStr = data[i][percentageKey];
-    let pct = pctStr ? parseFloat(pctStr.replace('%','')) / 100 : 1;
+    const pctStr = data[i][percentageKey];
+    const pct = pctStr ? parseFloat(pctStr.replace('%', '')) / 100 : 1;
     cumulative *= pct;
-    // Optional: format as percentage string with two decimals
     data[i][newCol] = (cumulative * 100).toFixed(2) + '%';
   }
 }

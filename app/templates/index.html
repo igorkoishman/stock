@@ -45,7 +45,7 @@
 {% if current_user.is_authenticated %}
   <div class="text-end">
     Logged in as <b>{{ current_user.username }}</b>
-    <a href="{{ url_for('logout') }}" class="btn btn-link">Logout</a>
+    <a href="{{ url_for('auth.logout') }}" class="btn btn-link">Logout</a>
   </div>
 {% endif %}
 <div class="text-center mb-3">
@@ -99,7 +99,7 @@
   </div>
 </div>
 <div class="text-center mb-3">
-  <a href="/charts" class="btn btn-outline-primary">📈 Go to Charts</a>
+  <a href="{{ url_for('main.charts') }}" class="btn btn-outline-primary">📈 Go to Charts</a>
 </div>
 
 <!-- JS Dependencies -->
@@ -132,7 +132,7 @@ Date,Close/Last,Volume,Open,High,Low
         </small>
       </div>
       <div class="modal-footer">
-        <a href="/static/sample.csv" class="btn btn-outline-primary" download>Download sample.csv</a>
+        <a href="{{ url_for('static', filename='sample.csv') }}" download>Download sample.csv</a>
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
       </div>
     </div>

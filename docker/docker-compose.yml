@@ -31,7 +31,7 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_PORT: 5432
     volumes:
-      - /volume1/docker/stock/Raw_Data:/data
+      - ~/Downloads/Raw_Data:/data
     depends_on:
       db:
         condition: service_healthy

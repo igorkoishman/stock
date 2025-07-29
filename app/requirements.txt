@@ -1,9 +1,7 @@
-flask
-pandas
+Flask
+Flask-Login
 psycopg2-binary
-sqlalchemy
+SQLAlchemy
 plotly
-openpyxl
-setuptools<81
-flask-login
-werkzeug
+pandas
+numpy

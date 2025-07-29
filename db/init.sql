@@ -9,13 +9,18 @@ CREATE TABLE IF NOT EXISTS stock_prices (
     label VARCHAR(128) NOT NULL,
     UNIQUE (date, label)
 );
-
+DO $$
+BEGIN
+  IF NOT EXISTS (SELECT FROM pg_tables WHERE tablename = 'users') THEN
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     username VARCHAR(100) UNIQUE NOT NULL,
     password_hash VARCHAR(256) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
+  END IF;
+END
+$$;
 
 CREATE INDEX IF NOT EXISTS idx_stock_prices_label ON stock_prices (label);
 CREATE INDEX IF NOT EXISTS idx_stock_prices_date ON stock_prices (date);

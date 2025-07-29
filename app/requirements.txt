@@ -1,9 +1,0 @@
-flask
-pandas
-psycopg2-binary
-sqlalchemy
-plotly
-openpyxl
-setuptools<81
-flask-login
-werkzeug

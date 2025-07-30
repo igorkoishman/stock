@@ -106,16 +106,23 @@ def chart_data():
         FROM stock_prices
         WHERE label = ANY(%s)
     """
-    params = (stocks,)
+    params = [stocks]  # stocks should be a list or tuple of stock labels
 
+    # ... date filtering as before ...
     if start and end:
         query += " AND date BETWEEN %s AND %s"
         params.extend([start, end])
+    elif start:
+        query += " AND date >= %s"
+        params.append(start)
+    elif end:
+        query += " AND date <= %s"
+        params.append(end)
 
     query += " ORDER BY date ASC"
-    print("Params:", params)
-    print("Param types:", [type(p) for p in params])
-    df = pd.read_sql_query(query, con=engine, params=params)
+
+    # The trick: pass params as a tuple!
+    df = pd.read_sql_query(query, con=engine, params=tuple(params))
 
     if df.empty:
         return jsonify({"error": "No data found in range."}), 404

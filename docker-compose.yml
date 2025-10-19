@@ -21,7 +21,7 @@ services:
     image: igorkoishman/stocks-app:latest
     ports:
       - "5050:5000"
-    env_file: .env.docker
+    env_file: .env
     volumes:
       - ${DATA_PATH}:/data
     depends_on:
